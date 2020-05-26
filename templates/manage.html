@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>HTML Form</h2>
+
+<form action="/change_key">
+  <label for="fname">Change your key:</label><br>
+  <input type="text" id="key" name="key" value="{{appdict.key}}" style="width: 480px;"><br>
+  <input type="submit" value="Submit">
+</form>
+<form action="/add_ip">
+  <label for="fname">Add an peer ip:</label><br>
+  <input type="text" id="ip" name="ip" value="enter ip here" style="width: 300px;"><br>
+  <input type="submit" value="Submit">
+</form>
+<form action="/add_transaction">
+  <label for="fname">Add an transaction signed by own:</label><br>
+  <input type="text" id="transaction" name="transaction" value="enter something here" style="width: 300px;"><br>
+  <input id="own" name="own" type="hidden" value="True">
+
+  <input type="submit" value="Submit">
+</form>
+
+<p>If you click the "Submit" button, the new key will be sent to a page called "/change_key and key will changed to that".</p>
+
+{% autoescape false %}
+<div>{{text}}</div>
+{% endautoescape %}
+
+
+
+</body>
+</html>

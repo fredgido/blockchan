@@ -157,7 +157,6 @@ print(this_app.blockchain.chain[-1].__dict__)
 
 
 
-
 a = Transaction({"moviments": {"Fred": 10, "John": 20}, "time": int(time.time())})
 print(a)
 print(a.verify())
