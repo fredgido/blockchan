@@ -12,7 +12,7 @@ class Transaction:
         self.data = data
         self.sign = sign
         self.signer = signer
-        self._hash = self.hash
+        #self._hash = self.hash
 
     def signit(self,sk):
         self.sign = sk.sign(json.dumps(self.data, sort_keys=True, ensure_ascii=True).encode('ascii')).hex()
@@ -35,7 +35,7 @@ class Transaction:
 
 
 a = Transaction({"moviments": {"Fred": 10, "John": 20}, "time": int(time.time())})
-
+a.hash
 
 print(a)
 
