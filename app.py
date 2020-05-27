@@ -87,7 +87,7 @@ class Block:
 
     def minenonce(self, diff=2, miner=None):
         self.miner = miner if miner is not None else self.miner
-        self.nonce = random.randint(0, 2 ** 30)
+        self.nonce = random.randint(0, 2 ** 30) if self.nonce ==0 else self.nonce
         while self.hash[0:diff] != ("0" * diff):
             self.nonce += 1
             self.timestamp = int(time.time())
@@ -137,7 +137,7 @@ class BlockChain:
     def addblock(self, newblock: Block):
         print(self.chain[-1].hash)
         newblock.previous_hash = self.chain[-1].hash
-        self.chain.append(newblock.minenonce())
+        self.chain.append(newblock.minenonce(miner=self.ver_key))
 
     def validate(self):
         for i in range(1, len(self.chain)):
@@ -164,12 +164,12 @@ a.signit(this_app.key)
 print(a)
 print(a.verify())
 
-new_block = Block(data=a,miner=this_app.ver_key)
+new_block = Block(data=a)
 #new_block.minenonce()
 
 this_app.blockchain.addblock(new_block)
 print(new_block)
-new_block2 = Block(data="banana", miner=this_app.ver_key)
+new_block2 = Block(data="banana")
 #new_block2.minenonce()
 
 this_app.blockchain.addblock(new_block2)
