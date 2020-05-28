@@ -4,10 +4,12 @@ import time
 import os
 import random
 import ecdsa
+import copy
 from hashlib import sha3_512
 import requests
 import threading
 import argparse
+from contextlib import suppress
 from flask import Flask, request, render_template
 
 random.seed(0)
@@ -40,6 +42,7 @@ class App:
         self.sig_to_ip_map = sig_to_ip_map if sig_to_ip_map is not None else {"all": []}
         self.key = self.load_key() if key is None else key
         self.pending_trans = pending_trans if pending_trans is not None else {"processing_thread": None, "pending_list": [], "run_signal": [True]}
+        self.pending_block = Block(data=self.pending_trans["pending_list"])
         self.__dict__ = json.loads(load) if load is not None else self.__dict__
 
     def load_key(self, file="key.sk"):
@@ -64,7 +67,7 @@ class App:
                 self.blockchain = BlockChain()
             else:
                 self.sig_to_ip_map = {"all": [input("input ip of some peer:")]}
-                self.blockchain = json.loads(requests.get('http://' + self.sig_to_ip_map["all"][0] + '/blockchain').text)
+                self.blockchain = json.loads(requests.get('http://' + self.sig_to_ip_map["all"][-1] + '/blockchain').text)
 
             st = input("Enter your SECP256k1 Signing Key in hex or else press enter:")  # use walrus
             if len(st) == 64:
@@ -82,17 +85,19 @@ class App:
             print("stopping miner")
             self.pending_trans["run_signal"][0] = False
             self.pending_trans["processing_thread"].join()
-            print(self.pending_trans["processing_thread"].is_alive())
-        if hasattr(self.blockchain.chain[-1], 'status'):
-            print("popping invalid block")
-            print(self.blockchain.chain[-1].status)
-            self.blockchain.chain.pop()
-        current_block = Block(data=self.pending_trans["pending_list"], previous_hash=self.blockchain.chain[-1].hash)
-        current_block.status = "being mined"
-        self.blockchain.chain.append(current_block)
+            print("mines is alive? " + str(self.pending_trans["processing_thread"].is_alive()))
+        #remaking thread
+        if hasattr(self.pending_block, 'status'):
+            print("pending block was not completly mined?  block "+ self.pending_block.hash)
+            print("status is " + str(self.pending_block.status))
+        if isinstance(self.pending_block, Block):
+            print("was not block")
+            self.pending_block = Block(data=self.pending_trans["pending_list"])
+        self.pending_block.previous_hash = self.blockchain.chain[-1].hash
+        self.pending_block.status = "being mined"
         self.pending_trans["run_signal"][0] = True
-        t1 = threading.Thread(target=current_block.minenonce, kwargs={'miner': self.ver_key, 'run_signal': self.pending_trans["run_signal"]})
-        t1.mined_block = current_block
+        t1 = threading.Thread(target=self.pending_block.minenonce, kwargs={'miner': self.ver_key, 'run_signal': self.pending_trans["run_signal"]})
+        t1.mined_block = self.pending_block # remove?
         t2 = threading.Thread(target=self.wait_for_mine_complete, kwargs={'thread': t1})
         t1.start()
         t2.start()
@@ -100,29 +105,74 @@ class App:
 
     def wait_for_mine_complete(self, thread):
         thread.join()
-        if self.blockchain.chain[-2].hash == self.blockchain.chain[-1].previous_hash and self.blockchain.chain[-1].hash[0:4] == ("0" * 4): #HARDCODED DIFF
+        if  self.blockchain.chain[-1].hash == self.pending_block.previous_hash and self.pending_block.validhash:
             print("HELLO WORLD HERE IS SUCESS MINE")
-            self.blockchain.chain[-1].data = json.loads(json.dumps(self.blockchain.chain[-1].data))
+            self.blockchain.chain.append(copy.deepcopy(self.pending_block))
             for trans_comp in self.blockchain.chain[-1].data:
                 for trans in self.pending_trans["pending_list"]:
                     if json.dumps(trans_comp, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True) == json.dumps(trans, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True):
+                        #if trans_comp.hash ==  trans.hash:
                         self.pending_trans["pending_list"].remove(trans)
 
     def receive_block(self, block):
+        print("recived block with hash " + str(block.hash))
         print("recived block with prevhash " + str(block.previous_hash))
-        for num, old_block in enumerate(self.blockchain.chain):
-            print("comapring " + str(old_block._hash))
-            if block.previous_hash == old_block._hash:
-                print("this block belongs in " + str(num + 1))
-                if self.blockchain.chain[num + 1].validhash:
-                    print("but we already have valid")
-                else:
-                    print("ok but we have invalid there block number " + str(num + 1) + " of " + str(len(self.blockchain.chain)))
-                    self.blockchain.chain[num + 1] = block
-                    for trans_comp in block.data:
-                        for trans in self.pending_trans["pending_list"]:
-                            if json.dumps(trans_comp, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True) == json.dumps(trans, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True):
-                                self.pending_trans["pending_list"].remove(trans)
+        i = self.blockchain.findblockplace(block)
+        if i is None:
+            print("this block has no place here")
+            return False
+        print("this block belongs in " + str(i)+" index"+ " of " + str(len(self.blockchain.chain)))
+        if i < len(self.blockchain.chain):
+            if self.blockchain.chain[i].validhash:
+                print("but we already have valid")
+                if block.hash == self.blockchain.chain[i].hash:
+                    print("print and they are the same")
+                    return True
+                return False
+            else:
+                print("ok but we have invalid there block number ")
+                self.blockchain.chain[i] = copy.deepcopy(block) #deep copy when
+        else:
+            print("This block belongs in the end")
+            self.blockchain.chain.append(copy.deepcopy(block))
+        print("trans added")
+        print(self.blockchain.chain[-1].data)
+        print("trans pending")
+        print(self.pending_trans["pending_list"])
+        for trans_comp in self.blockchain.chain[-1].data:
+            for trans in self.pending_trans["pending_list"]:
+                if json.dumps(trans_comp, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True) == json.dumps(trans, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True):
+                    self.pending_trans["pending_list"].remove(trans)
+        return True
+
+    def propagate_new_block(self,out_block):
+        for ip in self.sig_to_ip_map["all"]:
+            with suppress(Exception):
+                r = requests.get("http://"+ip + "/receive_mined_block", params={"block": repr(out_block)})
+                print(r.text)
+                print("sent to "+ ip)
+
+    def propagate_new_transaction(self,out_trans):
+        for ip in self.sig_to_ip_map["all"]:
+            with suppress(Exception):
+                r = requests.get("http://" + ip + "/add_transaction", params={"transaction": repr(out_trans)})
+                print(r.text)
+                print("sent to " + ip)
+
+    def aquire_blockchain(self):
+        recived_chains =[]
+        for ip in self.sig_to_ip_map["all"]:
+            with suppress(Exception):
+                r = requests.get("http://" + ip + "/add_transaction")
+                recived_chains.append(json.loads(r.text))
+                print("from " + ip+" "+ len(recived_chains[-1]["chain"]) +"\n" + json.dumps(recived_chains[-1], indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True) )
+        largest_chain = recived_chains[-1]
+        for chain in recived_chains:
+            if len(chain["chain"]) > len(largest_chain["chain"]):
+                largest_chain = chain
+        print("largest chain is "+json.dumps(largest_chain, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True))
+
+
 
     @property
     def ver_key(self):
@@ -164,18 +214,19 @@ class Transaction:
 
 
 class Block:
-    def __init__(self, data, previous_hash=int(0).to_bytes(64, 'big').hex(), nonce=0, miner=("0" * 128), timestamp=None):
+    def __init__(self, data=[], previous_hash=int(0).to_bytes(64, 'big').hex(), nonce=0, miner=("0" * 128), timestamp=None,diff=4):
         self.previous_hash = previous_hash
         self.data = data
         self.miner = miner
         self.timestamp = timestamp if timestamp is not None else int(time.time())
         self.nonce = nonce
         self._hash = self.hash
+        self.diff = diff
 
-    def minenonce(self, diff=4, miner=None, run_signal=(True,)):
+    def minenonce(self, miner=None, run_signal=(True,)):
         self.miner = miner if miner is not None else self.miner
         self.nonce = random.randint(0, 2 ** 30) if self.nonce == 0 else self.nonce
-        while self.hash[0:diff] != ("0" * diff) and run_signal[0]:
+        while self.hash[0:self.diff] != ("0" * self.diff) and run_signal[0]:
             self.nonce += 1
             self.timestamp = int(time.time())
             # print(self.hash[0:diff]+"\n"+str(self.nonce)+"\n")
@@ -194,8 +245,8 @@ class Block:
         return self._hash
 
     @property
-    def validhash(self, diff=4):
-        return self.hash[0:diff] == ("0" * diff)
+    def validhash(self):
+        return self.hash[0:self.diff] == ("0" * self.diff)
 
     def __repr__(self):
         return json.dumps(self, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True)
@@ -218,6 +269,14 @@ class BlockChain:
         print(self.chain[-1].hash)
         newblock.previous_hash = self.chain[-1].hash
         self.chain.append(newblock.minenonce(miner=ver_key))
+
+    def findblockplace(self,blocktocheck):
+        for num, old_block in enumerate(self.chain):
+            print("comapring " + str(old_block._hash))
+            if blocktocheck.previous_hash == old_block._hash:
+                print("this block belongs in " + str(num + 1))
+                return num+1
+        #return
 
     def validate(self):
         for i in range(1, len(self.chain)):
@@ -245,7 +304,7 @@ this_app.pending_trans["run_signal"][0] = False
 print("status: " + str(this_app.blockchain.chain[-1].__dict__.get("status")))
 this_app.pending_trans["processing_thread"].join()
 print(this_app)
-inc_block = Block(data=["test"], previous_hash=this_app.blockchain.chain[-1].previous_hash).minenonce()
+inc_block = Block(data=[["test"]], previous_hash=this_app.blockchain.chain[-1].hash).minenonce()
 print("printing incoming block")
 print(inc_block)
 print(this_app)
@@ -253,7 +312,7 @@ print(this_app)
 
 
 def test():
-    time.sleep(10)
+    time.sleep(13)
     print(("http://localhost:"+str(args.port)+"/receive_mined_block"))
     r = requests.get("http://localhost:"+str(args.port)+"/receive_mined_block", params={"block":repr(inc_block)})#r = requests.get("http://localhost:"+str(args.port)+"/")
     print(r.text)
@@ -335,4 +394,4 @@ def receive_mined_block():
     return " addedd " + json.dumps(block, indent=4, cls=JCoder, sort_keys=True, ensure_ascii=True)
 
 
-app.run(host='0.0.0.0', port=args.port, debug=True)
+app.run(host='0.0.0.0', port=args.port)#, debug=True)
