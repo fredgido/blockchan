@@ -16,7 +16,8 @@ python3 -m venv /path/to/new/virtual/environment
 Windows:
 ```bash
 c:\>c:\Python35\python -m venv c:\path\to\myenv
-```bash
+```
+
 
 Installing dependencies:
 
