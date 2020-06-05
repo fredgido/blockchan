@@ -21,7 +21,7 @@ c:\>c:\Python35\python -m venv c:\path\to\myenv
 
 Installing dependencies:
 
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
+Use the package manager [pip](https://pip.pypa.io/en/stable/) to install dependencies.
 
 ```bash
 pip install ecdsa requests flash jsonpickle
@@ -29,7 +29,7 @@ pip install ecdsa requests flash jsonpickle
 
 ## Usage
 
-Change the test number according to you needs.
+Change the test number according to your needs.
 
 ```bash
 python3 test1.py
